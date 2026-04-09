@@ -2,11 +2,12 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import api from "../api/axios";
 import Editor from "@monaco-editor/react";
+import ChatPanel from "../components/ChatPanel";
 
 // Python AI service URL — call directly to avoid Vite proxy issues
 const AI_URL = import.meta.env.VITE_AI_URL || "http://localhost:8000";
 
-// Parse the raw Mistral response into labelled sections 
+// ─── Parse the raw Mistral response into labelled sections ────────────────────
 // The prompt asks for 3 numbered sections, so we split on them.
 function parseAIResponse(text) {
   if (!text) return { structure: '', issues: '', refactoring: '' };
@@ -27,7 +28,7 @@ function parseAIResponse(text) {
   };
 }
 
-// Score → colour helper (matches CodeFile.complexityScore 0-100) 
+// ─── Score → colour helper (matches CodeFile.complexityScore 0-100) ──────────
 function scoreColor(score) {
   if (!score) return 'var(--text-muted)';
   if (score <= 25) return 'var(--accent-green)';
@@ -36,7 +37,7 @@ function scoreColor(score) {
   return 'var(--accent-red)';
 }
 
-// Main component 
+// ─── Main component ──────────────────────────────────────────────────────────
 export default function ProjectDetails() {
   const { id }    = useParams();
   const navigate  = useNavigate();
@@ -49,8 +50,9 @@ export default function ProjectDetails() {
   const [analyzing,    setAnalyzing]    = useState(false);
   const [analyzeError, setAnalyzeError] = useState('');
   const [search,       setSearch]       = useState('');
+  const [chatOpen,     setChatOpen]     = useState(false);
 
-  // Fetch file list 
+  // ── Fetch file list ────────────────────────────────────────────────────────
   useEffect(() => {
     api.get(`/projects/${id}/files`)
       .then(res => setFiles(Array.isArray(res.data) ? res.data : []))
@@ -58,7 +60,7 @@ export default function ProjectDetails() {
       .finally(() => setLoadingFiles(false));
   }, [id]);
 
-  // Load a file's content into Monaco 
+  // ── Load a file's content into Monaco ─────────────────────────────────────
   const loadFile = async (file) => {
     setSelectedFile(file);
     setAnalyzeError('');
@@ -66,10 +68,14 @@ export default function ProjectDetails() {
     setLoadingCode(true);
     try {
       const res = await api.get(`/projects/files/${file.id}`);
-      // CodeFile.content holds the source
-      setCode(res.data?.content ?? '// No content available.');
-      // Update our local file with latest fields (aiSummary, aiSuggestion, metrics)
-      setSelectedFile(res.data);
+      const fileData = res.data;
+      const content  = fileData?.content ?? '// No content available.';
+      setCode(content);
+      setSelectedFile(fileData);
+      // Store content in files array so ChatPanel can use it as context
+      setFiles(prev => prev.map(f =>
+        f.id === file.id ? { ...f, ...fileData, content } : f
+      ));
     } catch {
       setCode('// Could not load file content.');
     } finally {
@@ -77,7 +83,7 @@ export default function ProjectDetails() {
     }
   };
 
-  // Analyze: POST code to Python AI service 
+  // ── Analyze: POST code to Python AI service ──────────────────────────────
   const handleAnalyze = async () => {
     if (!selectedFile) return;
 
@@ -91,13 +97,14 @@ export default function ProjectDetails() {
     setAnalyzeError('');
 
     try {
-      // Call to Python FastAPI (Ollama) directly — no Vite proxy needed
+      // Call Python FastAPI (Ollama) directly — no Vite proxy needed
       const res = await fetch(`${AI_URL}/analyze`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ code }),
       });
 
+      // Try to parse JSON regardless of status so we can show the error detail
       let data;
       try { data = await res.json(); } catch { data = null; }
 
@@ -250,6 +257,19 @@ export default function ProjectDetails() {
                 }}>
                   {analyzing ? <><Spinner /> Analyzing…</> : '⚡ Analyze with AI'}
                 </button>
+
+                {/* Chat button */}
+                <button onClick={() => setChatOpen(v => !v)} style={{
+                  padding: '7px 14px', borderRadius: 'var(--radius-sm)', border: '1px solid',
+                  borderColor: chatOpen ? 'var(--accent-purple)' : 'var(--border-default)',
+                  background: chatOpen ? 'rgba(188,140,255,0.12)' : 'var(--bg-elevated)',
+                  color: chatOpen ? 'var(--accent-purple)' : 'var(--text-secondary)',
+                  fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12,
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+                  transition: 'all var(--transition-fast)',
+                }}>
+                  💬 {chatOpen ? 'Close Chat' : 'Chat with Code'}
+                </button>
               </div>
 
               {/* Scrollable content */}
@@ -396,11 +416,18 @@ export default function ProjectDetails() {
           )}
         </div>
       </div>
+
+      {/* ── Chat with Code — floating panel ── */}
+      <ChatPanel
+        files={files}
+        isOpen={chatOpen}
+        onClose={() => setChatOpen(false)}
+      />
     </div>
   );
 }
 
-// Sub-components 
+// ─── Sub-components ───────────────────────────────────────────────────────────
 
 function MetaPill({ label, value, color = 'var(--accent-cyan)' }) {
   return (

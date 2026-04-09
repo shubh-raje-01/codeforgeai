@@ -44,7 +44,7 @@ def quick_scan(code: str) -> dict:
     }
 
 
-# Full Ollama analysis: called by the frontend "Analyze" button 
+# Full Ollama analysis: called by the frontend "Analyze with AI" button 
 def full_analysis(code: str) -> dict:
     prompt = f"""Analyze this code as a senior engineer. Reply in exactly 3 sections:
 
@@ -147,3 +147,97 @@ def health():
     except Exception as e:
         return {"status": "ollama_offline", "error": str(e),
                 "tip": "Run 'ollama serve'"}
+
+
+# Chat with Code 
+
+class ChatMessage(BaseModel):
+    role: str       # "user" or "assistant"
+    content: str
+
+class ChatRequest(BaseModel):
+    messages: list[ChatMessage]               # full conversation history
+    files: list[dict] = []                    # [{ fileName, content }]
+
+@app.post("/chat")
+def chat_with_code(request: ChatRequest):
+    """
+    Multi-turn chat grounded in the project's source files.
+    - files: list of { fileName, content } — passed once per session
+    - messages: full conversation history so Ollama has context
+    Only answers questions relevant to the provided code.
+    """
+    if not request.messages:
+        raise HTTPException(status_code=400, detail="No messages provided.")
+
+    # Build file context block — include each file's content (truncated)
+    if request.files:
+        ctx_parts = []
+        total_chars = 0
+        for f in request.files:
+            name    = f.get("fileName", "unknown")
+            content = f.get("content", "")[:1500]   # cap per file
+            total_chars += len(content)
+            ctx_parts.append(f"### {name}\n```\n{content}\n```")
+            if total_chars > 6000:                   # cap total context
+                ctx_parts.append("... (additional files truncated)")
+                break
+        file_context = "\n\n".join(ctx_parts)
+    else:
+        file_context = "No files provided."
+
+    # System prompt — grounds the model to only answer about this project
+    system_prompt = f"""You are a code assistant for a software project. \
+You have access to the following source files:
+
+{file_context}
+
+Rules:
+- ONLY answer questions about the code above.
+- If asked something unrelated to the code, say: "I can only help with questions about this project's code."
+- Be concise and specific. Reference file names and line content when relevant.
+- If you don't know, say so clearly."""
+
+    # Build Ollama messages: system + full conversation history
+    ollama_messages = [{"role": "system", "content": system_prompt}]
+    for m in request.messages:
+        ollama_messages.append({"role": m.role, "content": m.content})
+
+    try:
+        response = requests.post(
+            f"{OLLAMA_BASE_URL}/api/chat",
+            json={
+                "model":    OLLAMA_MODEL,
+                "messages": ollama_messages,
+                "stream":   False,
+                "options": {
+                    "num_predict": 500,
+                    "temperature": 0.3,
+                    "num_ctx":     4096,   # larger ctx needed for multi-file chat
+                },
+            },
+            timeout=120,
+        )
+
+        if response.status_code != 200:
+            raise HTTPException(status_code=500,
+                detail=f"Ollama returned {response.status_code}: {response.text}")
+
+        result  = response.json()
+        content = result.get("message", {}).get("content", "")
+        if not content:
+            raise HTTPException(status_code=500, detail="Empty response from Ollama.")
+
+        print(f"✓ Chat [{OLLAMA_MODEL}] responded ({len(content)} chars)")
+        return { "reply": content, "model_used": OLLAMA_MODEL }
+
+    except requests.exceptions.ConnectionError:
+        raise HTTPException(status_code=503,
+            detail=f"Cannot connect to Ollama at {OLLAMA_BASE_URL}. Run: ollama serve")
+    except requests.exceptions.Timeout:
+        raise HTTPException(status_code=504,
+            detail=f"Ollama timed out during chat. Try a smaller model.")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
