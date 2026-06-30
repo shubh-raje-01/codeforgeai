@@ -4,15 +4,11 @@ import api from "../api/axios";
 import Editor from "@monaco-editor/react";
 import ChatPanel from "../components/ChatPanel";
 
-// Python AI service URL — call directly to avoid Vite proxy issues
 const AI_URL = import.meta.env.VITE_AI_URL || "http://localhost:8000";
 
-// ─── Parse the raw Mistral response into labelled sections ────────────────────
-// The prompt asks for 3 numbered sections, so we split on them.
 function parseAIResponse(text) {
   if (!text) return { structure: '', issues: '', refactoring: '' };
 
-  // Split on "1.", "2.", "3." headings (with optional bold/markdown)
   const clean  = text.replace(/\*\*/g, '').replace(/#+\s/g, '');
   const parts  = clean.split(/(?=\b[123]\.\s)/);
 
@@ -22,13 +18,12 @@ function parseAIResponse(text) {
   };
 
   return {
-    structure:   get(1) || clean,   // fallback: show everything in structure
+    structure:   get(1) || clean,
     issues:      get(2),
     refactoring: get(3),
   };
 }
 
-// ─── Score → colour helper (matches CodeFile.complexityScore 0-100) ──────────
 function scoreColor(score) {
   if (!score) return 'var(--text-muted)';
   if (score <= 25) return 'var(--accent-green)';
@@ -37,7 +32,6 @@ function scoreColor(score) {
   return 'var(--accent-red)';
 }
 
-// ─── Main component ──────────────────────────────────────────────────────────
 export default function ProjectDetails() {
   const { id }    = useParams();
   const navigate  = useNavigate();
@@ -52,7 +46,6 @@ export default function ProjectDetails() {
   const [search,       setSearch]       = useState('');
   const [chatOpen,     setChatOpen]     = useState(false);
 
-  // ── Fetch file list ────────────────────────────────────────────────────────
   useEffect(() => {
     api.get(`/projects/${id}/files`)
       .then(res => setFiles(Array.isArray(res.data) ? res.data : []))
@@ -60,7 +53,6 @@ export default function ProjectDetails() {
       .finally(() => setLoadingFiles(false));
   }, [id]);
 
-  // ── Load a file's content into Monaco ─────────────────────────────────────
   const loadFile = async (file) => {
     setSelectedFile(file);
     setAnalyzeError('');
@@ -72,7 +64,6 @@ export default function ProjectDetails() {
       const content  = fileData?.content ?? '// No content available.';
       setCode(content);
       setSelectedFile(fileData);
-      // Store content in files array so ChatPanel can use it as context
       setFiles(prev => prev.map(f =>
         f.id === file.id ? { ...f, ...fileData, content } : f
       ));
@@ -83,11 +74,9 @@ export default function ProjectDetails() {
     }
   };
 
-  // ── Analyze: POST code to Python AI service ──────────────────────────────
   const handleAnalyze = async () => {
     if (!selectedFile) return;
 
-    // Guard: need code loaded first
     if (!code || code === '// No content available.' || code === '// Could not load file content.') {
       setAnalyzeError('No source code loaded. Click a file first to load its content.');
       return;
@@ -97,14 +86,12 @@ export default function ProjectDetails() {
     setAnalyzeError('');
 
     try {
-      // Call Python FastAPI (Ollama) directly — no Vite proxy needed
       const res = await fetch(`${AI_URL}/analyze`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ code }),
       });
 
-      // Try to parse JSON regardless of status so we can show the error detail
       let data;
       try { data = await res.json(); } catch { data = null; }
 
@@ -125,7 +112,6 @@ export default function ProjectDetails() {
       setFiles(prev => prev.map(f => f.id === updated.id ? updated : f));
 
     } catch (err) {
-      // Network error means Ollama / Python service is not running
       const msg = err?.message || 'Unknown error';
       if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('ECONNREFUSED')) {
         setAnalyzeError(
@@ -145,47 +131,108 @@ export default function ProjectDetails() {
   );
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg-base)' }}>
-      <div style={{ display: 'flex', height: 'calc(100vh - 56px)', marginTop: 56 }}>
+    <div style={{ minHeight: '100vh', background: 'var(--bg-base)', position: 'relative', overflow: 'hidden' }}>
+      
+      {/* ── Background glows ── */}
+      <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 0, overflow: 'hidden' }}>
+        <div style={{
+          position: 'absolute', width: 600, height: 600, borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(99,102,241,0.04) 0%, transparent 70%)',
+          top: '-10%', right: '-10%',
+          animation: 'glowPulse 10s ease-in-out infinite',
+        }} />
+        <div style={{
+          position: 'absolute', width: 500, height: 500, borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(168,85,247,0.03) 0%, transparent 70%)',
+          bottom: '10%', left: '-10%',
+          animation: 'glowPulse 12s ease-in-out infinite 3s',
+        }} />
+      </div>
+
+      <div style={{ display: 'flex', height: 'calc(100vh - 60px)', marginTop: 60, position: 'relative', zIndex: 1 }}>
 
         {/* ── SIDEBAR ─────────────────────────────────────────────────────── */}
         <aside style={{
-          width: 260, flexShrink: 0,
-          background: 'var(--bg-surface)',
-          borderRight: '1px solid var(--border-subtle)',
+          width: 280, flexShrink: 0,
+          background: 'rgba(12,15,26,0.65)',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+          borderRight: '1px solid rgba(255,255,255,0.06)',
           display: 'flex', flexDirection: 'column', overflow: 'hidden',
+          transition: 'all var(--transition-base)',
         }}>
           {/* Header */}
-          <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-elevated)' }}>
-            <button onClick={() => navigate('/dashboard')} style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              fontFamily: 'var(--font-mono)', fontSize: 11,
-              color: 'var(--text-muted)', padding: 0, marginBottom: 10,
-              display: 'flex', alignItems: 'center', gap: 4,
-              transition: 'color var(--transition-fast)',
-            }}
-              onMouseEnter={e => e.currentTarget.style.color = 'var(--accent-primary)'}
-              onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
-            >← Dashboard</button>
-            <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 10 }}>
-              Files
+          <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(5,8,16,0.2)' }}>
+            <button 
+              id="back-to-dashboard-btn"
+              onClick={() => navigate('/dashboard')} 
+              style={{
+                background: 'none', border: 'none', cursor: 'pointer',
+                fontFamily: 'var(--font-sans)', fontSize: 12, fontWeight: 500,
+                color: 'var(--text-muted)', padding: 0, marginBottom: 16,
+                display: 'flex', alignItems: 'center', gap: 6,
+                transition: 'color var(--transition-fast)',
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.color = 'var(--accent-primary-light)';
+                e.currentTarget.firstChild.style.transform = 'translateX(-2px)';
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.color = 'var(--text-muted)';
+                e.currentTarget.firstChild.style.transform = 'translateX(0)';
+              }}
+            >
+              <span style={{ transition: 'transform var(--transition-fast)', display: 'inline-block' }}>←</span> Back to Dashboard
+            </button>
+            <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 16, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 12, letterSpacing: '-0.01em' }}>
+              Project Files
             </h2>
             <div style={{ position: 'relative' }}>
-              <span style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: 12, pointerEvents: 'none' }}>⌕</span>
-              <input placeholder="Search files..." value={search} onChange={e => setSearch(e.target.value)}
-                style={{ width: '100%', padding: '7px 10px 7px 26px', background: 'var(--bg-overlay)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontSize: 11, outline: 'none', transition: 'border-color var(--transition-fast)' }}
-                onFocus={e => e.target.style.borderColor = 'var(--accent-primary)'}
-                onBlur={e  => e.target.style.borderColor = 'var(--border-subtle)'}
+              <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: 14, pointerEvents: 'none' }}>⌕</span>
+              <input 
+                id="search-files-input"
+                placeholder="Search files..." 
+                value={search} 
+                onChange={e => setSearch(e.target.value)}
+                style={{ 
+                  width: '100%', 
+                  padding: '9px 12px 9px 30px', 
+                  background: 'rgba(255,255,255,0.03)', 
+                  border: '1px solid rgba(255,255,255,0.07)', 
+                  borderRadius: 'var(--radius-md)', 
+                  color: 'var(--text-primary)', 
+                  fontFamily: 'var(--font-sans)', 
+                  fontSize: 13, 
+                  outline: 'none', 
+                  transition: 'all var(--transition-fast)' 
+                }}
+                onFocus={e => {
+                  e.target.style.borderColor = 'rgba(99,102,241,0.6)';
+                  e.target.style.boxShadow = '0 0 0 3px rgba(99,102,241,0.1)';
+                }}
+                onBlur={e => {
+                  e.target.style.borderColor = 'rgba(255,255,255,0.07)';
+                  e.target.style.boxShadow = 'none';
+                }}
               />
             </div>
           </div>
 
           {/* File list */}
-          <div style={{ flex: 1, overflowY: 'auto', padding: 8 }}>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '12px 10px' }}>
             {loadingFiles ? (
-              [1,2,3,4].map(i => <div key={i} style={{ height: 36, margin: '4px 0', borderRadius: 'var(--radius-sm)', background: 'linear-gradient(90deg, var(--bg-elevated) 25%, var(--bg-overlay) 50%, var(--bg-elevated) 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.5s infinite' }} />)
+              [1,2,3,4,5].map(i => (
+                <div key={i} style={{ 
+                  height: 38, 
+                  margin: '6px 0', 
+                  borderRadius: 'var(--radius-md)', 
+                  background: 'linear-gradient(90deg, rgba(255,255,255,0.02) 25%, rgba(255,255,255,0.05) 50%, rgba(255,255,255,0.02) 75%)', 
+                  backgroundSize: '200% 100%', 
+                  animation: 'shimmer 1.5s infinite' 
+                }} />
+              ))
             ) : filteredFiles.length === 0 ? (
-              <p style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)', padding: '16px 8px', textAlign: 'center' }}>
+              <p style={{ fontFamily: 'var(--font-sans)', fontSize: 12, color: 'var(--text-muted)', padding: '24px 12px', textAlign: 'center' }}>
                 {search ? 'No matching files' : 'No files found'}
               </p>
             ) : filteredFiles.map(file => {
@@ -193,24 +240,45 @@ export default function ProjectDetails() {
               const hasAI    = !!(file.aiSummary || file.aiSuggestion);
               const score    = file.complexityScore ?? 0;
               return (
-                <div key={file.id} onClick={() => loadFile(file)} style={{
-                  padding: '9px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', marginBottom: 2,
-                  background: isActive ? 'var(--accent-primary-muted)' : 'transparent',
-                  border: `1px solid ${isActive ? 'rgba(88,166,255,0.2)' : 'transparent'}`,
-                  transition: 'all var(--transition-fast)', display: 'flex', alignItems: 'center', gap: 8,
-                }}
-                  onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = 'var(--bg-overlay)'; }}
-                  onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
+                <div 
+                  key={file.id} 
+                  id={`file-item-${file.id}`}
+                  onClick={() => loadFile(file)} 
+                  style={{
+                    padding: '9px 12px', 
+                    borderRadius: 'var(--radius-md)', 
+                    cursor: 'pointer', 
+                    marginBottom: 4,
+                    background: isActive ? 'rgba(99,102,241,0.12)' : 'transparent',
+                    border: `1px solid ${isActive ? 'rgba(99,102,241,0.25)' : 'transparent'}`,
+                    transition: 'all var(--transition-fast)', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: 10,
+                  }}
+                  onMouseEnter={e => { 
+                    if (!isActive) e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; 
+                  }}
+                  onMouseLeave={e => { 
+                    if (!isActive) e.currentTarget.style.background = 'transparent'; 
+                  }}
                 >
-                  <span style={{ fontSize: 13, flexShrink: 0 }}>{getFileIcon(file.fileName)}</span>
-                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: isActive ? 'var(--accent-primary)' : 'var(--text-secondary)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span style={{ fontSize: 14, flexShrink: 0 }}>{getFileIcon(file.fileName)}</span>
+                  <span style={{ 
+                    fontFamily: 'var(--font-mono)', 
+                    fontSize: 12, 
+                    color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)', 
+                    flex: 1, 
+                    overflow: 'hidden', 
+                    textOverflow: 'ellipsis', 
+                    whiteSpace: 'nowrap',
+                    fontWeight: isActive ? 600 : 400
+                  }}>
                     {file.fileName}
                   </span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-                    {/* AI done indicator */}
-                    {hasAI && <span title="AI analysis done" style={{ fontSize: 10, color: 'var(--accent-green)' }}>⚡</span>}
-                    {/* Complexity dot */}
-                    {score > 0 && <span style={{ width: 6, height: 6, borderRadius: '50%', background: scoreColor(score) }} />}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                    {hasAI && <span title="AI analysis complete" style={{ fontSize: 11, color: 'var(--accent-green)' }}>⚡</span>}
+                    {score > 0 && <span style={{ width: 7, height: 7, borderRadius: '50%', background: scoreColor(score), boxShadow: `0 0 6px ${scoreColor(score)}` }} />}
                   </div>
                 </div>
               );
@@ -218,162 +286,308 @@ export default function ProjectDetails() {
           </div>
 
           {/* Footer */}
-          <div style={{ padding: '10px 16px', borderTop: '1px solid var(--border-subtle)', fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)', letterSpacing: '0.08em' }}>
-            {files.length} FILE{files.length !== 1 ? 'S' : ''} · {files.filter(f => f.aiSummary).length} ANALYZED
+          <div style={{ 
+            padding: '12px 20px', 
+            borderTop: '1px solid rgba(255,255,255,0.06)', 
+            fontFamily: 'var(--font-mono)', 
+            fontSize: 10, 
+            color: 'var(--text-muted)', 
+            letterSpacing: '0.08em',
+            background: 'rgba(5,8,16,0.1)'
+          }}>
+            {files.length} FILES · {files.filter(f => f.aiSummary).length} ANALYZED
           </div>
         </aside>
 
         {/* ── MAIN PANEL ──────────────────────────────────────────────────── */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--bg-base)' }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {selectedFile ? (
             <>
               {/* Panel header */}
-              <div style={{ padding: '12px 20px', background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-                  <span style={{ fontSize: 16 }}>{getFileIcon(selectedFile.fileName)}</span>
-                  <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <div style={{ 
+                padding: '14px 24px', 
+                background: 'rgba(12,15,26,0.6)', 
+                backdropFilter: 'blur(12px)',
+                WebkitBackdropFilter: 'blur(12px)',
+                borderBottom: '1px solid rgba(255,255,255,0.06)', 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'space-between', 
+                flexWrap: 'wrap', 
+                gap: 12 
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+                  <span style={{ fontSize: 18 }}>{getFileIcon(selectedFile.fileName)}</span>
+                  <h2 style={{ 
+                    fontFamily: 'var(--font-display)', 
+                    fontSize: 16, 
+                    fontWeight: 800, 
+                    color: 'var(--text-primary)', 
+                    overflow: 'hidden', 
+                    textOverflow: 'ellipsis', 
+                    whiteSpace: 'nowrap',
+                    letterSpacing: '-0.01em'
+                  }}>
                     {selectedFile.fileName}
                   </h2>
-                  {/* CodeFile metrics */}
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    {selectedFile.lineCount   > 0 && <MetaPill label="lines"   value={selectedFile.lineCount}   />}
-                    {selectedFile.methodCount > 0 && <MetaPill label="methods" value={selectedFile.methodCount} color="var(--accent-purple)" />}
-                    {selectedFile.classCount  > 0 && <MetaPill label="classes" value={selectedFile.classCount}  color="var(--accent-yellow)" />}
+                  
+                  {/* Pills */}
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {selectedFile.lineCount > 0 && <MetaPill label="lines" value={selectedFile.lineCount.toLocaleString()} color="var(--accent-cyan)" />}
+                    {selectedFile.methodCount > 0 && <MetaPill label="methods" value={selectedFile.methodCount.toLocaleString()} color="var(--accent-purple)" />}
+                    {selectedFile.classCount > 0 && <MetaPill label="classes" value={selectedFile.classCount.toLocaleString()} color="var(--accent-yellow)" />}
                     {selectedFile.complexityScore > 0 && (
                       <MetaPill label="complexity" value={`${selectedFile.complexityScore}/100`} color={scoreColor(selectedFile.complexityScore)} />
                     )}
                   </div>
                 </div>
 
-                <button onClick={handleAnalyze} disabled={analyzing || loadingCode} style={{
-                  padding: '7px 18px', borderRadius: 'var(--radius-sm)', border: 'none',
-                  background: analyzing ? 'var(--bg-overlay)' : 'linear-gradient(135deg, var(--accent-primary), var(--accent-purple))',
-                  color: analyzing ? 'var(--text-muted)' : '#fff',
-                  fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12,
-                  cursor: (analyzing || loadingCode) ? 'not-allowed' : 'pointer',
-                  display: 'flex', alignItems: 'center', gap: 6,
-                  boxShadow: analyzing ? 'none' : '0 2px 8px rgba(88,166,255,0.3)',
-                  transition: 'all var(--transition-fast)',
-                }}>
-                  {analyzing ? <><Spinner /> Analyzing…</> : '⚡ Analyze with AI'}
-                </button>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  {/* AI Analysis button */}
+                  <button 
+                    id="analyze-btn"
+                    onClick={handleAnalyze} 
+                    disabled={analyzing || loadingCode} 
+                    style={{
+                      padding: '8px 18px', 
+                      borderRadius: 'var(--radius-md)', 
+                      border: 'none',
+                      background: analyzing 
+                        ? 'rgba(255,255,255,0.05)' 
+                        : 'var(--grad-primary)',
+                      color: analyzing ? 'var(--text-muted)' : '#fff',
+                      fontFamily: 'var(--font-sans)', 
+                      fontWeight: 600, 
+                      fontSize: 12,
+                      cursor: (analyzing || loadingCode) ? 'not-allowed' : 'pointer',
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: 6,
+                      boxShadow: analyzing ? 'none' : '0 4px 16px rgba(99,102,241,0.3)',
+                      transition: 'all var(--transition-fast)',
+                    }}
+                    onMouseEnter={e => {
+                      if (!analyzing && !loadingCode) {
+                        e.currentTarget.style.boxShadow = '0 6px 20px rgba(99,102,241,0.5)';
+                        e.currentTarget.style.transform = 'translateY(-1px)';
+                      }
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.boxShadow = analyzing ? 'none' : '0 4px 16px rgba(99,102,241,0.3)';
+                      e.currentTarget.style.transform = 'translateY(0)';
+                    }}
+                  >
+                    {analyzing ? <><Spinner /> Analyzing…</> : <>⚡ Analyze with AI</>}
+                  </button>
 
-                {/* Chat button */}
-                <button onClick={() => setChatOpen(v => !v)} style={{
-                  padding: '7px 14px', borderRadius: 'var(--radius-sm)', border: '1px solid',
-                  borderColor: chatOpen ? 'var(--accent-purple)' : 'var(--border-default)',
-                  background: chatOpen ? 'rgba(188,140,255,0.12)' : 'var(--bg-elevated)',
-                  color: chatOpen ? 'var(--accent-purple)' : 'var(--text-secondary)',
-                  fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12,
-                  cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
-                  transition: 'all var(--transition-fast)',
-                }}>
-                  💬 {chatOpen ? 'Close Chat' : 'Chat with Code'}
-                </button>
+                  {/* Chat button */}
+                  <button 
+                    id="toggle-chat-btn"
+                    onClick={() => setChatOpen(v => !v)} 
+                    style={{
+                      padding: '8px 16px', 
+                      borderRadius: 'var(--radius-md)', 
+                      border: '1px solid',
+                      borderColor: chatOpen ? 'rgba(168,85,247,0.4)' : 'rgba(255,255,255,0.08)',
+                      background: chatOpen ? 'rgba(168,85,247,0.12)' : 'rgba(255,255,255,0.04)',
+                      color: chatOpen ? 'var(--accent-purple)' : 'var(--text-secondary)',
+                      fontFamily: 'var(--font-sans)', 
+                      fontWeight: 600, 
+                      fontSize: 12,
+                      cursor: 'pointer', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: 6,
+                      transition: 'all var(--transition-fast)',
+                    }}
+                    onMouseEnter={e => {
+                      if (!chatOpen) {
+                        e.currentTarget.style.borderColor = 'rgba(255,255,255,0.2)';
+                        e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
+                      }
+                    }}
+                    onMouseLeave={e => {
+                      if (!chatOpen) {
+                        e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)';
+                        e.currentTarget.style.background = 'rgba(255,255,255,0.04)';
+                      }
+                    }}
+                  >
+                    <span>💬</span> {chatOpen ? 'Close Chat' : 'Chat with Code'}
+                  </button>
+                </div>
               </div>
 
-              {/* Scrollable content */}
-              <div style={{ flex: 1, overflowY: 'auto' }}>
+              {/* Scrollable layout for Monaco + AI suggestions */}
+              <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
 
-                {/* Monaco Editor */}
-                <div style={{ borderBottom: '1px solid var(--border-subtle)', position: 'relative' }}>
+                {/* Monaco Editor Wrapper */}
+                <div style={{ 
+                  borderBottom: '1px solid rgba(255,255,255,0.06)', 
+                  position: 'relative',
+                  background: '#1e1e1e', // Monaco vs-dark base
+                }}>
                   {loadingCode && (
-                    <div style={{ position: 'absolute', inset: 0, zIndex: 10, background: 'rgba(13,17,23,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-                      <Spinner /><span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-muted)' }}>Loading…</span>
+                    <div style={{ 
+                      position: 'absolute', 
+                      inset: 0, 
+                      zIndex: 10, 
+                      background: 'rgba(5,8,16,0.85)', 
+                      backdropFilter: 'blur(4px)',
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center', 
+                      gap: 12 
+                    }}>
+                      <Spinner />
+                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
+                        LOADING CONTENT...
+                      </span>
                     </div>
                   )}
                   <Editor
-                    height="380px"
+                    height="400px"
                     language={detectLanguage(selectedFile.fileName)}
                     theme="vs-dark"
                     value={code}
                     options={{
-                      readOnly: true, minimap: { enabled: false },
-                      fontSize: 13, lineHeight: 22,
+                      readOnly: true, 
+                      minimap: { enabled: false },
+                      fontSize: 13, 
+                      lineHeight: 22,
                       scrollBeyondLastLine: false,
                       fontFamily: 'JetBrains Mono, Fira Code, monospace',
-                      padding: { top: 12, bottom: 12 },
+                      padding: { top: 16, bottom: 16 },
+                      scrollbar: {
+                        vertical: 'visible',
+                        horizontal: 'visible',
+                        useShadows: false,
+                        verticalScrollbarSize: 6,
+                        horizontalScrollbarSize: 6,
+                      }
                     }}
                   />
                 </div>
 
-                {/* AI Analysis output */}
-                <div style={{ padding: 20 }}>
+                {/* AI Analysis Panel */}
+                <div style={{ padding: '24px 24px 48px', maxWidth: 1000, width: '100%', margin: '0 auto' }}>
 
-                  {/* Error banner */}
+                  {/* Error Banner */}
                   {analyzeError && (
-                    <div style={{ padding: '12px 16px', borderRadius: 'var(--radius-md)', background: 'rgba(255,123,114,0.08)', border: '1px solid rgba(255,123,114,0.25)', fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--accent-red)', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
-                      ⚠ {analyzeError}
+                    <div style={{ 
+                      padding: '14px 18px', 
+                      borderRadius: 'var(--radius-lg)', 
+                      background: 'rgba(239,68,68,0.08)', 
+                      border: '1px solid rgba(239,68,68,0.25)', 
+                      fontFamily: 'var(--font-sans)', 
+                      fontSize: 13, 
+                      color: 'var(--accent-red)', 
+                      marginBottom: 20, 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: 8,
+                      animation: 'bounceIn 300ms ease'
+                    }}>
+                      <span style={{ fontSize: 16 }}>⚠️</span> {analyzeError}
                     </div>
                   )}
 
-                  {/* Analyzing skeleton */}
+                  {/* Loading skeleton */}
                   {analyzing && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                       <AICardSkeleton label="AI SUMMARY"      color="var(--accent-cyan)"   />
                       <AICardSkeleton label="ISSUES DETECTED" color="var(--accent-orange)" />
                       <AICardSkeleton label="REFACTORING"     color="var(--accent-green)"  />
                     </div>
                   )}
 
-                  {/* Results */}
+                  {/* AI Output Content */}
                   {!analyzing && (selectedFile.aiSummary || selectedFile.aiSuggestion) && (() => {
-                    // aiSummary has the full Mistral response — parse into sections
                     const raw      = selectedFile.aiSummary || selectedFile.aiSuggestion;
                     const sections = parseAIResponse(raw);
                     return (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
 
-                        {/* Header row */}
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span style={{ fontSize: 18 }}>🤖</span>
-                            <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>
-                              AI Analysis
+                        {/* Title header */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, paddingBottom: 10, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <span style={{ fontSize: 20 }}>🤖</span>
+                            <span style={{ fontFamily: 'var(--font-display)', fontSize: 16, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
+                              AI Intelligence Report
                             </span>
-                            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--accent-green)', background: 'rgba(63,185,80,0.1)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(63,185,80,0.2)' }}>
+                            <span style={{ 
+                              fontFamily: 'var(--font-mono)', 
+                              fontSize: 10, 
+                              fontWeight: 600,
+                              color: 'var(--accent-green)', 
+                              background: 'rgba(16,185,129,0.08)', 
+                              padding: '3px 10px', 
+                              borderRadius: 'var(--radius-full)', 
+                              border: '1px solid rgba(16,185,129,0.2)' 
+                            }}>
                               Mistral 7B
                             </span>
                           </div>
-                          <button onClick={handleAnalyze} style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
-                            Re-analyze
+                          <button 
+                            id="re-analyze-btn"
+                            onClick={handleAnalyze} 
+                            style={{ 
+                              fontFamily: 'var(--font-sans)', 
+                              fontSize: 12, 
+                              color: 'var(--accent-primary-light)', 
+                              background: 'none', 
+                              border: 'none', 
+                              cursor: 'pointer', 
+                              fontWeight: 500,
+                              transition: 'color var(--transition-fast)'
+                            }}
+                            onMouseEnter={e => e.currentTarget.style.color = 'var(--accent-primary)'}
+                            onMouseLeave={e => e.currentTarget.style.color = 'var(--accent-primary-light)'}
+                          >
+                            Re-analyze Code
                           </button>
                         </div>
 
-                        {/* 1. Code Structure */}
+                        {/* Staggered cards */}
                         {sections.structure && (
-                          <AICard
-                            icon="◈"
-                            label="CODE STRUCTURE"
-                            color="var(--accent-cyan)"
-                            bg="rgba(121,192,255,0.06)"
-                            border="rgba(121,192,255,0.2)"
-                            content={sections.structure}
-                          />
+                          <div style={{ animation: 'staggerFade 400ms ease 50ms both' }}>
+                            <AICard
+                              icon="◈"
+                              label="CODE STRUCTURE"
+                              color="var(--accent-cyan)"
+                              bg="rgba(34,211,238,0.05)"
+                              border="rgba(34,211,238,0.18)"
+                              content={sections.structure}
+                            />
+                          </div>
                         )}
 
                         {/* 2. Issues */}
                         {sections.issues && (
-                          <AICard
-                            icon="▲"
-                            label="ISSUES & CODE SMELLS"
-                            color="var(--accent-orange)"
-                            bg="rgba(255,166,87,0.06)"
-                            border="rgba(255,166,87,0.2)"
-                            content={sections.issues}
-                          />
+                          <div style={{ animation: 'staggerFade 400ms ease 120ms both' }}>
+                            <AICard
+                              icon="▲"
+                              label="ISSUES & CODE SMELLS"
+                              color="var(--accent-orange)"
+                              bg="rgba(245,158,11,0.05)"
+                              border="rgba(245,158,11,0.18)"
+                              content={sections.issues}
+                            />
+                          </div>
                         )}
 
                         {/* 3. Refactoring */}
                         {sections.refactoring && (
-                          <AICard
-                            icon="💡"
-                            label="REFACTORING SUGGESTIONS"
-                            color="var(--accent-green)"
-                            bg="rgba(63,185,80,0.06)"
-                            border="rgba(63,185,80,0.2)"
-                            content={sections.refactoring}
-                          />
+                          <div style={{ animation: 'staggerFade 400ms ease 190ms both' }}>
+                            <AICard
+                              icon="💡"
+                              label="REFACTORING SUGGESTIONS"
+                              color="var(--accent-green)"
+                              bg="rgba(16,185,129,0.05)"
+                              border="rgba(16,185,129,0.18)"
+                              content={sections.refactoring}
+                            />
+                          </div>
                         )}
 
                       </div>
@@ -382,15 +596,40 @@ export default function ProjectDetails() {
 
                   {/* Empty state */}
                   {!analyzing && !selectedFile.aiSummary && !selectedFile.aiSuggestion && !analyzeError && (
-                    <div style={{ textAlign: 'center', padding: '40px 20px', background: 'var(--bg-surface)', border: '1px dashed var(--border-default)', borderRadius: 'var(--radius-lg)' }}>
-                      <div style={{ fontSize: 40, marginBottom: 14 }}>🤖</div>
-                      <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 16, color: 'var(--text-primary)', marginBottom: 8 }}>
-                        No AI analysis yet
+                    <div style={{ 
+                      textAlign: 'center', 
+                      padding: '48px 24px', 
+                      background: 'rgba(12,15,26,0.5)', 
+                      border: '1px dashed rgba(255,255,255,0.08)', 
+                      borderRadius: 'var(--radius-xl)',
+                      animation: 'fadeIn 400ms ease'
+                    }}>
+                      <div style={{ fontSize: 44, marginBottom: 16, animation: 'float 4s ease-in-out infinite' }}>🤖</div>
+                      <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 18, color: 'var(--text-primary)', marginBottom: 8, fontWeight: 700 }}>
+                        No analysis generated yet
                       </h3>
-                      <p style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.7, maxWidth: 360, margin: '0 auto 20px' }}>
-                        Click <span style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>⚡ Analyze with AI</span> to send this file to Mistral 7B via OpenRouter and get a full breakdown — code structure, issues, and refactoring suggestions.
+                      <p style={{ fontFamily: 'var(--font-sans)', fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.6, maxWidth: 420, margin: '0 auto 24px' }}>
+                        Click <span style={{ color: 'var(--accent-primary-light)', fontWeight: 600 }}>⚡ Analyze with AI</span> to run code inspections and retrieve structure maps, code smells, and optimizations.
                       </p>
-                      <button onClick={handleAnalyze} style={{ padding: '9px 22px', borderRadius: 'var(--radius-md)', border: 'none', background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-purple))', color: '#fff', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 13, cursor: 'pointer', boxShadow: '0 4px 12px rgba(88,166,255,0.3)' }}>
+                      <button 
+                        id="run-analysis-empty-btn"
+                        onClick={handleAnalyze} 
+                        style={{ 
+                          padding: '10px 24px', 
+                          borderRadius: 'var(--radius-md)', 
+                          border: 'none', 
+                          background: 'var(--grad-primary)', 
+                          color: '#fff', 
+                          fontFamily: 'var(--font-sans)', 
+                          fontWeight: 600, 
+                          fontSize: 13, 
+                          cursor: 'pointer', 
+                          boxShadow: '0 4px 16px rgba(99,102,241,0.4)',
+                          transition: 'all var(--transition-base)'
+                        }}
+                        onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 6px 20px rgba(99,102,241,0.5)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
+                        onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 4px 16px rgba(99,102,241,0.4)'; e.currentTarget.style.transform = 'translateY(0)'; }}
+                      >
                         ⚡ Analyze with AI
                       </button>
                     </div>
@@ -399,17 +638,26 @@ export default function ProjectDetails() {
               </div>
             </>
           ) : (
-            // No file selected
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40 }}>
-              <div style={{ textAlign: 'center', maxWidth: 340 }}>
-                <div style={{ width: 72, height: 72, margin: '0 auto 18px', borderRadius: 'var(--radius-xl)', background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32 }}>
+            // No file selected state
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40, animation: 'fadeIn 300ms ease' }}>
+              <div style={{ textAlign: 'center', maxWidth: 360 }}>
+                <div style={{ 
+                  width: 80, height: 80, margin: '0 auto 20px', 
+                  borderRadius: 'var(--radius-xl)', 
+                  background: 'rgba(255,255,255,0.02)', 
+                  border: '1px solid rgba(255,255,255,0.06)', 
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', 
+                  fontSize: 36,
+                  boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+                  animation: 'float 4s ease-in-out infinite'
+                }}>
                   📂
                 </div>
-                <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 17, color: 'var(--text-primary)', marginBottom: 10 }}>
-                  Select a file to begin
+                <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 18, color: 'var(--text-primary)', marginBottom: 8, fontWeight: 700 }}>
+                  Select a file to inspect
                 </h3>
-                <p style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.7 }}>
-                  Pick a file from the sidebar. Then click <span style={{ color: 'var(--accent-primary)' }}>⚡ Analyze with AI</span> to get Mistral-powered insights.
+                <p style={{ fontFamily: 'var(--font-sans)', fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                  Choose any codebase module from the sidebar, then toggle code assistant chat or run AI analysis.
                 </p>
               </div>
             </div>
@@ -417,7 +665,6 @@ export default function ProjectDetails() {
         </div>
       </div>
 
-      {/* ── Chat with Code — floating panel ── */}
       <ChatPanel
         files={files}
         isOpen={chatOpen}
@@ -427,44 +674,89 @@ export default function ProjectDetails() {
   );
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
-
-function MetaPill({ label, value, color = 'var(--accent-cyan)' }) {
+/* ── Pills component ── */
+function MetaPill({ label, value, color }) {
   return (
-    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color, background: `${color}15`, padding: '2px 8px', borderRadius: 'var(--radius-sm)', border: `1px solid ${color}30`, whiteSpace: 'nowrap' }}>
-      {value} {label}
+    <span style={{ 
+      fontFamily: 'var(--font-mono)', 
+      fontSize: 11, 
+      fontWeight: 500,
+      color, 
+      background: `${color}10`, 
+      padding: '3px 10px', 
+      borderRadius: 'var(--radius-full)', 
+      border: `1px solid ${color}25`, 
+      whiteSpace: 'nowrap' 
+    }}>
+      {value} <span style={{ color: 'var(--text-muted)', fontWeight: 400, marginLeft: 2 }}>{label}</span>
     </span>
   );
 }
 
+/* ── Collapsible Card ── */
 function AICard({ icon, label, color, bg, border, content }) {
   const [expanded, setExpanded] = useState(true);
-  // Split content into bullet lines where possible
   const lines = content.split('\n').filter(l => l.trim());
 
   return (
-    <div style={{ background: 'var(--bg-surface)', border: `1px solid ${border}`, borderLeft: `3px solid ${color}`, borderRadius: 'var(--radius-md)', overflow: 'hidden', animation: 'fadeIn 400ms ease' }}>
-      {/* Card header */}
-      <div onClick={() => setExpanded(v => !v)} style={{ padding: '12px 16px', background: bg, display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ color, fontSize: 13 }}>{icon}</span>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color, letterSpacing: '0.1em', fontWeight: 700 }}>{label}</span>
+    <div style={{ 
+      background: 'rgba(12,15,26,0.6)', 
+      backdropFilter: 'blur(8px)',
+      border: `1px solid ${border}`, 
+      borderLeft: `4px solid ${color}`, 
+      borderRadius: 'var(--radius-lg)', 
+      overflow: 'hidden',
+      transition: 'all var(--transition-base)',
+      boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
+    }}>
+      {/* Header */}
+      <div 
+        onClick={() => setExpanded(v => !v)} 
+        style={{ 
+          padding: '14px 18px', 
+          background: bg, 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'space-between', 
+          cursor: 'pointer', 
+          userSelect: 'none' 
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ color, fontSize: 14 }}>{icon}</span>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color, letterSpacing: '0.12em', fontWeight: 700 }}>
+            {label}
+          </span>
         </div>
-        <span style={{ color, fontSize: 10, transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform var(--transition-fast)' }}>▼</span>
+        <svg 
+          width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="3"
+          style={{ 
+            transform: expanded ? 'rotate(180deg)' : 'none', 
+            transition: 'transform var(--transition-fast)' 
+          }}
+        >
+          <path d="M6 9l6 6 6-6"/>
+        </svg>
       </div>
 
-      {/* Card body */}
+      {/* Body */}
       {expanded && (
-        <div style={{ padding: '14px 18px' }}>
+        <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
           {lines.map((line, i) => {
             const isBullet = /^[-•*]\s/.test(line) || /^\d+\.\s/.test(line.slice(2));
             const trimmed  = line.replace(/^[-•*]\s/, '').trim();
             return (
-              <div key={i} style={{ display: 'flex', gap: 10, marginBottom: i < lines.length - 1 ? 8 : 0, alignItems: 'flex-start' }}>
-                {isBullet && (
-                  <span style={{ color, fontSize: 14, flexShrink: 0, marginTop: 1 }}>▸</span>
-                )}
-                <p style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.7, margin: 0 }}>
+              <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                {isBullet ? (
+                  <span style={{ color, fontSize: 13, flexShrink: 0, marginTop: 2 }}>▸</span>
+                ) : null}
+                <p style={{ 
+                  fontFamily: 'var(--font-sans)', 
+                  fontSize: 13, 
+                  color: 'var(--text-primary)', 
+                  lineHeight: 1.65, 
+                  margin: 0 
+                }}>
                   {isBullet ? trimmed : line}
                 </p>
               </div>
@@ -476,30 +768,39 @@ function AICard({ icon, label, color, bg, border, content }) {
   );
 }
 
+/* ── Card Skeleton Loading ── */
 function AICardSkeleton({ label, color }) {
   return (
-    <div style={{ background: 'var(--bg-surface)', border: `1px solid ${color}20`, borderLeft: `3px solid ${color}`, borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
-      <div style={{ padding: '12px 16px', background: `${color}08`, display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color, letterSpacing: '0.1em', fontWeight: 700 }}>{label}</span>
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)' }}>— generating…</span>
+    <div style={{ 
+      background: 'rgba(12,15,26,0.6)', 
+      border: `1px solid ${color}15`, 
+      borderLeft: `4px solid ${color}`, 
+      borderRadius: 'var(--radius-lg)', 
+      overflow: 'hidden' 
+    }}>
+      <div style={{ padding: '14px 18px', background: `${color}05`, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color, letterSpacing: '0.12em', fontWeight: 700 }}>{label}</span>
+        <span style={{ fontFamily: 'var(--font-sans)', fontSize: 11, color: 'var(--text-muted)' }}>— scanning structure…</span>
       </div>
-      <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {[90, 75, 85, 60].map((w, i) => (
-          <div key={i} style={{ height: 12, borderRadius: 4, width: `${w}%`, background: 'linear-gradient(90deg, var(--bg-elevated) 25%, var(--bg-overlay) 50%, var(--bg-elevated) 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.5s infinite', animationDelay: `${i * 100}ms` }} />
+      <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {[85, 70, 75, 55].map((w, i) => (
+          <div key={i} style={{ 
+            height: 12, 
+            borderRadius: 4, 
+            width: `${w}%`, 
+            background: 'linear-gradient(90deg, rgba(255,255,255,0.02) 25%, rgba(255,255,255,0.06) 50%, rgba(255,255,255,0.02) 75%)', 
+            backgroundSize: '200% 100%', 
+            animation: 'shimmer 1.5s infinite',
+            animationDelay: `${i * 120}ms` 
+          }} />
         ))}
       </div>
     </div>
   );
 }
 
-function ComplexityBadge({ level }) {
-  const cfg = { LOW: { color: 'var(--accent-green)', bg: 'rgba(63,185,80,0.1)' }, MEDIUM: { color: 'var(--accent-yellow)', bg: 'rgba(227,179,65,0.1)' }, HIGH: { color: 'var(--accent-orange)', bg: 'rgba(255,166,87,0.1)' }, CRITICAL: { color: 'var(--accent-red)', bg: 'rgba(255,123,114,0.1)' } };
-  const c = cfg[level] || { color: 'var(--text-muted)', bg: 'var(--bg-overlay)' };
-  return <span style={{ padding: '2px 8px', borderRadius: 'var(--radius-sm)', fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, color: c.color, background: c.bg, border: `1px solid ${c.color}30` }}>{level}</span>;
-}
-
 function Spinner() {
-  return <span style={{ width: 12, height: 12, display: 'inline-block', border: '2px solid var(--text-muted)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />;
+  return <span style={{ width: 14, height: 14, display: 'inline-block', border: '2px solid rgba(255,255,255,0.2)', borderTopColor: 'currentColor', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />;
 }
 
 function detectLanguage(fileName) {

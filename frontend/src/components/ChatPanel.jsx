@@ -2,7 +2,6 @@ import { useState, useRef, useEffect } from 'react';
 
 const AI_URL = import.meta.env.VITE_AI_URL || 'http://localhost:8000';
 
-// Suggested starter questions
 const SUGGESTIONS = [
   'What does this project do?',
   'Which file has the most complexity?',
@@ -12,21 +11,21 @@ const SUGGESTIONS = [
 ];
 
 export default function ChatPanel({ files = [], isOpen, onClose }) {
-  const [messages,  setMessages]  = useState([]);   // { role, content, error? }
+  const [messages,  setMessages]  = useState([]);
   const [input,     setInput]     = useState('');
   const [loading,   setLoading]   = useState(false);
   const [error,     setError]     = useState('');
   const bottomRef = useRef(null);
   const inputRef  = useRef(null);
 
-  // Scroll to bottom whenever messages change
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, loading]);
 
-  // Focus input when panel opens
   useEffect(() => {
-    if (isOpen) setTimeout(() => inputRef.current?.focus(), 100);
+    if (isOpen) {
+      setTimeout(() => inputRef.current?.focus(), 100);
+    }
   }, [isOpen]);
 
   async function sendMessage(text) {
@@ -36,7 +35,6 @@ export default function ChatPanel({ files = [], isOpen, onClose }) {
     setInput('');
     setError('');
 
-    // Add user message immediately
     const userMsg = { role: 'user', content: question };
     const newHistory = [...messages, userMsg];
     setMessages(newHistory);
@@ -47,9 +45,7 @@ export default function ChatPanel({ files = [], isOpen, onClose }) {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          // Send full conversation history for multi-turn context
           messages: newHistory.map(m => ({ role: m.role, content: m.content })),
-          // Send all loaded files as context — truncated server-side
           files: files.map(f => ({
             fileName: f.fileName,
             content:  f.content || '',
@@ -73,7 +69,6 @@ export default function ChatPanel({ files = [], isOpen, onClose }) {
       const friendly = msg.includes('Failed to fetch') || msg.includes('NetworkError')
         ? `Cannot reach AI service. Make sure it's running:\nuvicorn main:app --reload --port 8000`
         : msg;
-      // Add error as a failed assistant message so it shows inline
       setMessages(prev => [...prev, {
         role: 'assistant', content: friendly, error: true
       }]);
@@ -101,39 +96,42 @@ export default function ChatPanel({ files = [], isOpen, onClose }) {
 
   return (
     <div style={{
-      position: 'fixed', bottom: 0, right: 0,
-      width: 380, height: '70vh', minHeight: 480,
+      position: 'fixed', bottom: 0, right: 24,
+      width: 400, height: '75vh', minHeight: 520,
       display: 'flex', flexDirection: 'column',
-      background: 'var(--bg-surface)',
-      border: '1px solid var(--border-default)',
-      borderBottom: 'none', borderRight: 'none',
-      borderRadius: 'var(--radius-xl) 0 0 0',
-      boxShadow: '-8px -8px 32px rgba(0,0,0,0.4)',
-      zIndex: 200,
-      animation: 'slideInLeft 250ms ease',
+      background: 'rgba(12,15,26,0.9)',
+      backdropFilter: 'blur(24px)',
+      WebkitBackdropFilter: 'blur(24px)',
+      border: '1px solid rgba(255,255,255,0.08)',
+      borderBottom: 'none',
+      borderRadius: 'var(--radius-xl) var(--radius-xl) 0 0',
+      boxShadow: '0 -16px 48px rgba(0,0,0,0.6), 0 0 0 1px rgba(99,102,241,0.08)',
+      zIndex: 2000,
+      animation: 'slideInUp 300ms cubic-bezier(0.34, 1.56, 0.64, 1)',
     }}>
 
       {/* ── Header ── */}
       <div style={{
-        padding: '12px 16px',
-        background: 'var(--bg-elevated)',
-        borderBottom: '1px solid var(--border-subtle)',
-        borderRadius: 'var(--radius-xl) 0 0 0',
+        padding: '14px 18px',
+        background: 'rgba(99,102,241,0.05)',
+        borderBottom: '1px solid rgba(255,255,255,0.06)',
+        borderRadius: 'var(--radius-xl) var(--radius-xl) 0 0',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         flexShrink: 0,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{
             width: 32, height: 32, borderRadius: 'var(--radius-md)',
-            background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-purple))',
+            background: 'var(--grad-primary)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontSize: 16,
+            boxShadow: '0 4px 12px rgba(99,102,241,0.3)',
           }}>🤖</div>
           <div>
-            <div style={{ fontFamily: 'var(--font-display)', fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
+            <div style={{ fontFamily: 'var(--font-display)', fontSize: 13, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
               Chat with Code
             </div>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)' }}>
+            <div style={{ fontFamily: 'var(--font-sans)', fontSize: 11, color: 'var(--text-muted)' }}>
               {loadedFileCount > 0
                 ? `${loadedFileCount} file${loadedFileCount !== 1 ? 's' : ''} in context`
                 : 'No files loaded — open a project first'}
@@ -141,74 +139,93 @@ export default function ChatPanel({ files = [], isOpen, onClose }) {
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 6 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {messages.length > 0 && (
-            <button onClick={clearChat} title="Clear chat" style={{
-              background: 'none', border: '1px solid var(--border-subtle)',
-              borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)',
-              cursor: 'pointer', padding: '4px 8px',
-              fontFamily: 'var(--font-mono)', fontSize: 11,
-              transition: 'all var(--transition-fast)',
-            }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--border-emphasis)'; e.currentTarget.style.color = 'var(--text-secondary)'; }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-subtle)'; e.currentTarget.style.color = 'var(--text-muted)'; }}
+            <button 
+              id="clear-chat-btn"
+              onClick={clearChat} 
+              title="Clear chat history" 
+              style={{
+                background: 'none', border: '1px solid rgba(255,255,255,0.08)',
+                borderRadius: 'var(--radius-md)', color: 'var(--text-muted)',
+                cursor: 'pointer', padding: '4px 10px',
+                fontFamily: 'var(--font-sans)', fontSize: 11, fontWeight: 500,
+                transition: 'all var(--transition-fast)',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.2)'; e.currentTarget.style.color = 'var(--text-secondary)'; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'; e.currentTarget.style.color = 'var(--text-muted)'; }}
             >
-              ⌫ Clear
+              Clear
             </button>
           )}
-          <button onClick={onClose} title="Close" style={{
-            background: 'none', border: 'none', cursor: 'pointer',
-            color: 'var(--text-muted)', fontSize: 18, padding: '0 4px',
-            transition: 'color var(--transition-fast)',
-          }}
+          <button 
+            id="close-chat-btn"
+            onClick={onClose} 
+            title="Close panel" 
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: 'var(--text-muted)', fontSize: 18, padding: '0 4px',
+              transition: 'color var(--transition-fast)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center'
+            }}
             onMouseEnter={e => e.currentTarget.style.color = 'var(--text-primary)'}
             onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
           >✕</button>
         </div>
       </div>
 
-      {/* ── Messages ── */}
+      {/* ── Messages list ── */}
       <div style={{
-        flex: 1, overflowY: 'auto', padding: '16px 14px',
-        display: 'flex', flexDirection: 'column', gap: 12,
+        flex: 1, overflowY: 'auto', padding: '20px 16px',
+        display: 'flex', flexDirection: 'column', gap: 14,
       }}>
 
-        {/* Empty state with suggestions */}
+        {/* Empty state view */}
         {messages.length === 0 && (
           <div style={{ animation: 'fadeIn 300ms ease' }}>
-            <div style={{ textAlign: 'center', marginBottom: 20 }}>
-              <div style={{ fontSize: 32, marginBottom: 8 }}>💬</div>
-              <p style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-                Ask anything about your project files.<br/>
-                I only know about the code in this project.
+            <div style={{ textAlign: 'center', marginBottom: 24, marginTop: 12 }}>
+              <div style={{ fontSize: 36, marginBottom: 10, animation: 'float 4s ease-in-out infinite' }}>💬</div>
+              <p style={{ fontFamily: 'var(--font-sans)', fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6, maxWidth: 280, margin: '0 auto' }}>
+                Ask detailed questions about classes, methods, or performance patterns in this project.
               </p>
             </div>
 
             {loadedFileCount === 0 ? (
               <div style={{
-                padding: '12px 14px', borderRadius: 'var(--radius-md)',
-                background: 'rgba(255,166,87,0.08)', border: '1px solid rgba(255,166,87,0.2)',
-                fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--accent-orange)',
+                padding: '14px', borderRadius: 'var(--radius-lg)',
+                background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.18)',
+                fontFamily: 'var(--font-sans)', fontSize: 12, color: 'var(--accent-orange)',
                 textAlign: 'center', lineHeight: 1.6,
               }}>
-                ⚠ No files loaded.<br/>
-                Select a file from the sidebar to load it into context.
+                ⚠️ No active codebase context.<br/>
+                Open a file from the list to populate helper context.
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                <p style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: 4 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <p style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)', letterSpacing: '0.12em', marginBottom: 4, fontWeight: 700 }}>
                   SUGGESTED QUESTIONS
                 </p>
                 {SUGGESTIONS.map((s, i) => (
-                  <button key={i} onClick={() => sendMessage(s)} style={{
-                    padding: '8px 12px', borderRadius: 'var(--radius-md)',
-                    background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)',
-                    color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', fontSize: 12,
-                    cursor: 'pointer', textAlign: 'left', lineHeight: 1.4,
-                    transition: 'all var(--transition-fast)',
-                  }}
-                    onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent-primary)'; e.currentTarget.style.color = 'var(--accent-primary)'; e.currentTarget.style.background = 'var(--accent-primary-muted)'; }}
-                    onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-subtle)'; e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.background = 'var(--bg-elevated)'; }}
+                  <button 
+                    key={i} 
+                    onClick={() => sendMessage(s)} 
+                    style={{
+                      padding: '10px 14px', borderRadius: 'var(--radius-md)',
+                      background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)',
+                      color: 'var(--text-secondary)', fontFamily: 'var(--font-sans)', fontSize: 13,
+                      cursor: 'pointer', textAlign: 'left', lineHeight: 1.45,
+                      transition: 'all var(--transition-fast)',
+                    }}
+                    onMouseEnter={e => { 
+                      e.currentTarget.style.borderColor = 'rgba(99,102,241,0.4)'; 
+                      e.currentTarget.style.color = 'var(--accent-primary-light)'; 
+                      e.currentTarget.style.background = 'rgba(99,102,241,0.08)'; 
+                    }}
+                    onMouseLeave={e => { 
+                      e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)'; 
+                      e.currentTarget.style.color = 'var(--text-secondary)'; 
+                      e.currentTarget.style.background = 'rgba(255,255,255,0.02)'; 
+                    }}
                   >
                     {s}
                   </button>
@@ -218,80 +235,79 @@ export default function ChatPanel({ files = [], isOpen, onClose }) {
           </div>
         )}
 
-        {/* Message bubbles */}
+        {/* Dynamic Bubble list */}
         {messages.map((msg, i) => (
           <MessageBubble key={i} msg={msg} />
         ))}
 
-        {/* Thinking indicator */}
         {loading && <ThinkingBubble />}
 
         <div ref={bottomRef} />
       </div>
 
-      {/* ── Input ── */}
+      {/* ── Input block ── */}
       <div style={{
-        padding: '12px 14px',
-        borderTop: '1px solid var(--border-subtle)',
-        background: 'var(--bg-elevated)',
+        padding: '14px 16px 20px',
+        borderTop: '1px solid rgba(255,255,255,0.06)',
+        background: 'rgba(5,8,16,0.3)',
         flexShrink: 0,
       }}>
         <div style={{
           display: 'flex', gap: 8, alignItems: 'flex-end',
-          background: 'var(--bg-overlay)',
-          border: '1px solid var(--border-default)',
-          borderRadius: 'var(--radius-md)',
-          padding: '8px 12px',
+          background: 'rgba(255,255,255,0.02)',
+          border: '1px solid rgba(255,255,255,0.08)',
+          borderRadius: 'var(--radius-lg)',
+          padding: '10px 14px',
           transition: 'border-color var(--transition-fast)',
         }}
-          onFocusCapture={e => e.currentTarget.style.borderColor = 'var(--accent-primary)'}
-          onBlurCapture={e  => e.currentTarget.style.borderColor = 'var(--border-default)'}
+          onFocusCapture={e => e.currentTarget.style.borderColor = 'rgba(99,102,241,0.5)'}
+          onBlurCapture={e  => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'}
         >
           <textarea
             ref={inputRef}
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask about your code… (Enter to send)"
+            placeholder="Ask a question... (Enter to send)"
             disabled={loading}
             rows={1}
             style={{
               flex: 1, background: 'none', border: 'none', outline: 'none',
-              color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontSize: 12,
-              resize: 'none', lineHeight: 1.5, maxHeight: 80,
+              color: 'var(--text-primary)', fontFamily: 'var(--font-sans)', fontSize: 13,
+              resize: 'none', lineHeight: 1.5, maxHeight: 90,
               overflow: 'auto',
             }}
             onInput={e => {
               e.target.style.height = 'auto';
-              e.target.style.height = Math.min(e.target.scrollHeight, 80) + 'px';
+              e.target.style.height = Math.min(e.target.scrollHeight, 90) + 'px';
             }}
           />
           <button
+            id="send-chat-msg-btn"
             onClick={() => sendMessage()}
             disabled={loading || !input.trim()}
             style={{
-              width: 30, height: 30, borderRadius: 'var(--radius-sm)',
+              width: 30, height: 30, borderRadius: 'var(--radius-md)',
               background: loading || !input.trim()
-                ? 'var(--bg-elevated)'
-                : 'var(--accent-primary)',
+                ? 'rgba(255,255,255,0.04)'
+                : 'var(--grad-primary)',
               border: 'none', cursor: loading || !input.trim() ? 'not-allowed' : 'pointer',
-              color: loading || !input.trim() ? 'var(--text-muted)' : '#000',
+              color: loading || !input.trim() ? 'var(--text-muted)' : '#fff',
               fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center',
               flexShrink: 0, transition: 'all var(--transition-fast)',
+              boxShadow: loading || !input.trim() ? 'none' : '0 4px 12px rgba(99,102,241,0.35)'
             }}
           >
             {loading ? <Spinner /> : '↑'}
           </button>
         </div>
-        <p style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)', marginTop: 6, textAlign: 'center' }}>
-          Shift+Enter for new line · Powered by Ollama ({import.meta.env.VITE_AI_MODEL || 'mistral'})
+        <p style={{ fontFamily: 'var(--font-sans)', fontSize: 10, color: 'var(--text-muted)', marginTop: 8, textAlign: 'center', letterSpacing: '0.01em' }}>
+          Shift + Enter for multiline · model: {import.meta.env.VITE_AI_MODEL || 'mistral'}
         </p>
       </div>
     </div>
   );
 }
-
-// ── Sub-components ─────────────────────────────────────────────────────────────
 
 function MessageBubble({ msg }) {
   const isUser = msg.role === 'user';
@@ -303,36 +319,36 @@ function MessageBubble({ msg }) {
       justifyContent: isUser ? 'flex-end' : 'flex-start',
       animation: 'fadeIn 200ms ease',
     }}>
-      {/* Avatar for assistant */}
       {!isUser && (
         <div style={{
           width: 26, height: 26, borderRadius: '50%', flexShrink: 0,
           background: msg.error
-            ? 'rgba(255,123,114,0.2)'
-            : 'linear-gradient(135deg, var(--accent-primary), var(--accent-purple))',
+            ? 'rgba(239,68,68,0.2)'
+            : 'var(--grad-primary)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontSize: 12, marginRight: 8, marginTop: 2,
+          boxShadow: msg.error ? 'none' : '0 2px 8px rgba(99,102,241,0.3)'
         }}>
-          {msg.error ? '⚠' : '🤖'}
+          {msg.error ? '⚠️' : '🤖'}
         </div>
       )}
 
       <div style={{
         maxWidth: '82%',
-        padding: '10px 13px',
+        padding: '10px 14px',
         borderRadius: isUser
           ? 'var(--radius-lg) var(--radius-lg) var(--radius-sm) var(--radius-lg)'
           : 'var(--radius-lg) var(--radius-lg) var(--radius-lg) var(--radius-sm)',
         background: isUser
-          ? 'var(--accent-primary-muted)'
+          ? 'rgba(99,102,241,0.12)'
           : msg.error
-            ? 'rgba(255,123,114,0.08)'
-            : 'var(--bg-elevated)',
+            ? 'rgba(239,68,68,0.06)'
+            : 'rgba(255,255,255,0.03)',
         border: `1px solid ${isUser
-          ? 'rgba(88,166,255,0.25)'
+          ? 'rgba(99,102,241,0.25)'
           : msg.error
-            ? 'rgba(255,123,114,0.2)'
-            : 'var(--border-subtle)'}`,
+            ? 'rgba(239,68,68,0.25)'
+            : 'rgba(255,255,255,0.06)'}`,
       }}>
         {lines.map((line, i) => {
           const isBullet = /^[-•*]\s/.test(line);
@@ -340,23 +356,23 @@ function MessageBubble({ msg }) {
           return (
             <div key={i} style={{
               display: 'flex', gap: 6, alignItems: 'flex-start',
-              marginBottom: i < lines.length - 1 ? 5 : 0,
+              marginBottom: i < lines.length - 1 ? 6 : 0,
             }}>
               {isBullet && (
-                <span style={{ color: 'var(--accent-primary)', fontSize: 13, flexShrink: 0, marginTop: 1 }}>▸</span>
+                <span style={{ color: 'var(--accent-primary-light)', fontSize: 13, flexShrink: 0, marginTop: 1 }}>▸</span>
               )}
               <p style={{
-                fontFamily: isCode ? 'var(--font-mono)' : 'var(--font-mono)',
-                fontSize: 12,
+                fontFamily: isCode ? 'var(--font-mono)' : 'var(--font-sans)',
+                fontSize: 12.5,
                 color: isUser
-                  ? 'var(--accent-primary)'
+                  ? 'var(--text-primary)'
                   : msg.error
                     ? 'var(--accent-red)'
                     : 'var(--text-primary)',
                 lineHeight: 1.6, margin: 0,
                 wordBreak: 'break-word',
-                background: isCode ? 'var(--bg-overlay)' : 'none',
-                padding: isCode ? '2px 6px' : 0,
+                background: isCode ? 'rgba(0,0,0,0.2)' : 'none',
+                padding: isCode ? '4px 8px' : 0,
                 borderRadius: isCode ? 'var(--radius-sm)' : 0,
               }}>
                 {isBullet ? line.replace(/^[-•*]\s/, '') : line}
@@ -374,25 +390,27 @@ function ThinkingBubble() {
     <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
       <div style={{
         width: 26, height: 26, borderRadius: '50%', flexShrink: 0,
-        background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-purple))',
+        background: 'var(--grad-primary)',
         display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12,
+        boxShadow: '0 2px 8px rgba(99,102,241,0.3)'
       }}>🤖</div>
       <div style={{
-        padding: '12px 16px', background: 'var(--bg-elevated)',
-        border: '1px solid var(--border-subtle)',
+        padding: '10px 14px', 
+        background: 'rgba(255,255,255,0.03)',
+        border: '1px solid rgba(255,255,255,0.06)',
         borderRadius: 'var(--radius-lg) var(--radius-lg) var(--radius-lg) var(--radius-sm)',
         display: 'flex', alignItems: 'center', gap: 5,
       }}>
         {[0, 1, 2].map(i => (
           <span key={i} style={{
             width: 6, height: 6, borderRadius: '50%',
-            background: 'var(--accent-primary)',
+            background: 'var(--accent-primary-light)',
             display: 'inline-block',
-            animation: `fadeIn 600ms ease ${i * 200}ms infinite alternate`,
-            opacity: 0.4,
+            animation: 'dotPulse 1.2s infinite alternate',
+            animationDelay: `${i * 200}ms`
           }} />
         ))}
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)', marginLeft: 4 }}>
+        <span style={{ fontFamily: 'var(--font-sans)', fontSize: 12, color: 'var(--text-muted)', marginLeft: 6 }}>
           Thinking…
         </span>
       </div>
@@ -404,7 +422,7 @@ function Spinner() {
   return (
     <span style={{
       width: 12, height: 12, display: 'inline-block',
-      border: '2px solid var(--text-muted)', borderTopColor: 'transparent',
+      border: '2px solid rgba(255,255,255,0.2)', borderTopColor: '#fff',
       borderRadius: '50%', animation: 'spin 0.8s linear infinite',
     }} />
   );
